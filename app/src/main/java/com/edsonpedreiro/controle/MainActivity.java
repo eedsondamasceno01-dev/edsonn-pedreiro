@@ -23,6 +23,8 @@ import androidx.core.content.FileProvider;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
@@ -123,6 +125,78 @@ public class MainActivity extends Activity {
                     startActivity(Intent.createChooser(send, "Enviar controle ao cliente"));
                 } catch (Exception e) {
                     Toast.makeText(MainActivity.this, "Não foi possível compartilhar o controle.", Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+
+
+        @JavascriptInterface
+        public String saveReceipt(String dataUrl, String fileName, String mimeType) {
+            try {
+                int comma = dataUrl.indexOf(',');
+                if (comma < 0) return "";
+                String meta = dataUrl.substring(0, comma);
+                String body = dataUrl.substring(comma + 1);
+                byte[] bytes = meta.contains(";base64")
+                        ? Base64.decode(body, Base64.DEFAULT)
+                        : Uri.decode(body).getBytes(StandardCharsets.UTF_8);
+
+                String ext = "";
+                if (fileName != null && fileName.contains(".")) {
+                    ext = fileName.substring(fileName.lastIndexOf('.')).replaceAll("[^a-zA-Z0-9.]", "");
+                }
+                String id = "receipt_" + System.currentTimeMillis() + ext;
+                File dir = new File(getFilesDir(), "receipts");
+                if (!dir.exists()) dir.mkdirs();
+                File file = new File(dir, id);
+                try (FileOutputStream fos = new FileOutputStream(file)) {
+                    fos.write(bytes);
+                }
+                return id;
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public String readStoredReceipt(String id) {
+            try {
+                File file = new File(new File(getFilesDir(), "receipts"), id);
+                if (!file.exists()) return "";
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                try (FileInputStream fis = new FileInputStream(file)) {
+                    byte[] buffer = new byte[8192];
+                    int n;
+                    while ((n = fis.read(buffer)) > 0) bos.write(buffer, 0, n);
+                }
+                String mime = "application/octet-stream";
+                String lower = id.toLowerCase();
+                if (lower.endsWith(".pdf")) mime = "application/pdf";
+                else if (lower.endsWith(".png")) mime = "image/png";
+                else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) mime = "image/jpeg";
+                return "data:" + mime + ";base64," + Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public void openStoredReceipt(String id, String fileName, String mimeType) {
+            runOnUiThread(() -> {
+                try {
+                    File file = new File(new File(getFilesDir(), "receipts"), id);
+                    if (!file.exists()) {
+                        Toast.makeText(MainActivity.this, "Comprovante não encontrado.", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    Uri uri = FileProvider.getUriForFile(MainActivity.this,
+                            getPackageName() + ".fileprovider", file);
+                    Intent view = new Intent(Intent.ACTION_VIEW);
+                    view.setDataAndType(uri, mimeType == null || mimeType.isEmpty() ? "application/octet-stream" : mimeType);
+                    view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(Intent.createChooser(view, "Abrir comprovante"));
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Não foi possível abrir o comprovante.", Toast.LENGTH_LONG).show();
                 }
             });
         }

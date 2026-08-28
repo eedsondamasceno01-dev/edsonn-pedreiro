@@ -352,7 +352,7 @@ function renderDetail(){
           <div class="muted">${esc(p.obs||'')}</div>
           ${p.file?`<div class="muted">Comprovante: ${esc(p.file)}</div>`:''}
           <div class="pay-actions no-print">
-            ${p.fileData?`<button class="mini receipt" onclick="viewReceipt(${p.id})">📎 Visualizar comprovante PIX</button>`:''}
+            ${(p.fileData||p.fileNativeId)?`<button class="mini receipt" onclick="viewReceipt(${p.id})">📎 Visualizar comprovante PIX</button>`:''}
             <button class="mini" onclick="editPayment(${p.id})">✏️ Editar</button>
             <button class="mini danger" onclick="deletePayment(${p.id})">🗑️ Excluir</button>
           </div>
@@ -481,10 +481,30 @@ async function fileToDataURL(file){
 
 function viewReceipt(id){
   const p=data.payments.find(x=>x.id===id);
-  if(!p || !p.fileData){
+  if(!p){
+    alert('Comprovante não encontrado.');
+    return;
+  }
+
+  try{
+    if(p.fileNativeId && window.AndroidBridge && typeof AndroidBridge.openStoredReceipt === 'function'){
+      AndroidBridge.openStoredReceipt(p.fileNativeId, p.file||'comprovante', p.fileType||'application/octet-stream');
+      return;
+    }
+  }catch(e){}
+
+  if(!p.fileData){
     alert('Este lançamento não possui comprovante salvo.');
     return;
   }
+
+  try{
+    if(window.AndroidBridge && typeof AndroidBridge.openDataUrl === 'function'){
+      AndroidBridge.openDataUrl(p.fileData, p.file||'comprovante', p.fileType||'application/octet-stream');
+      return;
+    }
+  }catch(e){}
+
   const w=window.open();
   if(!w){
     alert('Permita pop-ups para visualizar o comprovante.');
@@ -495,15 +515,15 @@ function viewReceipt(id){
       <!doctype html><html><head><meta charset="utf-8"><title>Comprovante PIX</title>
       <style>html,body{margin:0;height:100%;font-family:Arial}object{width:100%;height:100%}.top{padding:10px;background:#111;color:#fff}</style>
       </head><body><div class="top">Comprovante PIX — ${esc(p.file||'PDF')}</div>
-      <object data="${p.fileData}" type="application/pdf">
-        <p>Seu navegador não abriu o PDF. <a href="${p.fileData}" target="_blank">Clique aqui para abrir.</a></p>
+      <object data="${receiptData}" type="application/pdf">
+        <p>Seu navegador não abriu o PDF. <a href="${receiptData}" target="_blank">Clique aqui para abrir.</a></p>
       </object></body></html>`);
   } else {
     w.document.write(`
       <!doctype html><html><head><meta charset="utf-8"><title>Comprovante PIX</title>
       <style>body{margin:0;background:#222;text-align:center;font-family:Arial}.top{padding:10px;background:#111;color:#fff}img{max-width:100%;height:auto;background:#fff}</style>
       </head><body><div class="top">Comprovante PIX — ${esc(p.file||'Imagem')}</div>
-      <img src="${p.fileData}"></body></html>`);
+      <img src="${receiptData}"></body></html>`);
   }
   w.document.close();
 }
@@ -518,15 +538,26 @@ async function savePayment(){
   const f=$('pFile').files[0];
   let fileData=null;
   let fileType=null;
+  let fileNativeId=null;
 
   if(f){
-    // localStorage has a limited capacity, so keep proofs reasonably small.
-    if(f.size > 3.5 * 1024 * 1024){
-      alert('O comprovante é muito grande. Use um PDF ou imagem de até aproximadamente 3,5 MB.');
+    if(f.size > 8 * 1024 * 1024){
+      alert('O comprovante é muito grande. Use um PDF ou imagem de até aproximadamente 8 MB.');
       return;
     }
+
     fileData=await fileToDataURL(f);
     fileType=f.type || (f.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : '');
+
+    try{
+      if(window.AndroidBridge && typeof AndroidBridge.saveReceipt === 'function'){
+        fileNativeId=AndroidBridge.saveReceipt(fileData, f.name, fileType);
+        if(fileNativeId){
+          // No APK, save the actual file natively instead of filling localStorage with base64.
+          fileData=null;
+        }
+      }
+    }catch(e){}
   }
 
   if(editingPaymentId!==null){
@@ -539,6 +570,7 @@ async function savePayment(){
       if(f){
         p.file=f.name;
         p.fileData=fileData;
+        p.fileNativeId=fileNativeId;
         p.fileType=fileType;
       }
     }
@@ -552,6 +584,7 @@ async function savePayment(){
       obs:$('pObs').value.trim(),
       file:f?f.name:'',
       fileData:fileData,
+      fileNativeId:fileNativeId,
       fileType:fileType
     });
   }
@@ -559,7 +592,7 @@ async function savePayment(){
   try{
     save();
   }catch(e){
-    alert('Não foi possível salvar o comprovante. O armazenamento do navegador pode estar cheio. Tente usar um arquivo menor.');
+    alert('Não foi possível salvar. Tente novamente.');
     return;
   }
 
@@ -569,6 +602,7 @@ async function savePayment(){
   editingPaymentId=null;
   hidePayment();
   renderDetail();
+  alert('Pagamento e comprovante salvos com sucesso.');
 }
 
 function gerarHtmlCliente(){
@@ -585,16 +619,22 @@ function gerarHtmlCliente(){
   const extrasLinhas=extrasLista.map(e=>`<div class="row"><div class="grow"><b>${esc(e.desc||'Serviço extra')}</b><div class="small">${esc(e.date||'')}</div></div><div class="amount">+ ${money(e.valor)}</div></div>`).join('');
 
   const linhas=lista.map(p=>{
-    const comprovante = p.fileData ? (
+    let receiptData=p.fileData||'';
+    try{
+      if(!receiptData && p.fileNativeId && window.AndroidBridge && typeof AndroidBridge.readStoredReceipt === 'function'){
+        receiptData=AndroidBridge.readStoredReceipt(p.fileNativeId);
+      }
+    }catch(e){}
+    const comprovante = receiptData ? (
       (p.fileType||'').includes('pdf')
       ? `<div class="proof"><b>Comprovante PIX:</b> ${esc(p.file||'comprovante.pdf')}<br>
-           <a class="proofbtn" href="${p.fileData}" target="_blank">📎 Visualizar comprovante PIX</a>
-           <object data="${p.fileData}" type="application/pdf" class="pdfbox">
-             <a href="${p.fileData}" target="_blank">Abrir comprovante PDF</a>
+           <a class="proofbtn" href="${receiptData}" target="_blank">📎 Visualizar comprovante PIX</a>
+           <object data="${receiptData}" type="application/pdf" class="pdfbox">
+             <a href="${receiptData}" target="_blank">Abrir comprovante PDF</a>
            </object></div>`
       : `<div class="proof"><b>Comprovante PIX:</b> ${esc(p.file||'imagem')}<br>
-           <a class="proofbtn" href="${p.fileData}" target="_blank">📎 Visualizar comprovante PIX</a>
-           <img class="proofimg" src="${p.fileData}" alt="Comprovante PIX"></div>`
+           <a class="proofbtn" href="${receiptData}" target="_blank">📎 Visualizar comprovante PIX</a>
+           <img class="proofimg" src="${receiptData}" alt="Comprovante PIX"></div>`
     ) : (p.file ? `<div class="small">Comprovante informado: ${esc(p.file)}</div>` : '');
 
     return `<div class="row">
@@ -677,11 +717,18 @@ async function enviarControleCliente(){
   }
 
   const html=gerarHtmlCliente();
+
+  try{
+    if(window.AndroidBridge && typeof AndroidBridge.shareHtml === 'function'){
+      AndroidBridge.shareHtml(html);
+      return;
+    }
+  }catch(e){}
+
   const blob=new Blob([html],{type:'text/html'});
   const nome='controle-valores-cliente.html';
   const file=new File([blob],nome,{type:'text/html'});
 
-  // On supported mobile browsers, open native share sheet (WhatsApp may appear).
   if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
     try{
       await navigator.share({
@@ -695,13 +742,12 @@ async function enviarControleCliente(){
     }
   }
 
-  // Fallback: download the self-contained client report.
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   a.download=nome;
   a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1500);
-  alert('O controle foi gerado. Envie o arquivo "controle-valores-cliente.html" ao cliente pelo WhatsApp. Ao abrir, ele poderá visualizar os comprovantes PIX.');
+  alert('O controle foi gerado. Envie o arquivo ao cliente pelo WhatsApp.');
 }
 
 function downloadBackup(){
