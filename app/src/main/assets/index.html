@@ -121,7 +121,7 @@
       <button class="outline" onclick="goHome()">← Voltar</button>
       <button onclick="showPayment()">+ Vale / pagamento</button>
       <button onclick="showExtraService()">+ Serviço extra</button>
-      <button class="outline" onclick="window.print()">Imprimir / Salvar PDF</button>
+      <button class="outline" onclick="imprimirOuSalvarPDF()">Imprimir / Salvar PDF</button>
       <button onclick="enviarControleCliente()">📤 Enviar controle ao cliente</button>
     </div>
 
@@ -485,10 +485,6 @@ function viewReceipt(id){
     alert('Este lançamento não possui comprovante salvo.');
     return;
   }
-  if(window.AndroidBridge && typeof AndroidBridge.openDataUrl==='function'){
-    AndroidBridge.openDataUrl(p.fileData, p.file||'comprovante', p.fileType||'application/octet-stream');
-    return;
-  }
   const w=window.open();
   if(!w){
     alert('Permita pop-ups para visualizar o comprovante.');
@@ -681,10 +677,6 @@ async function enviarControleCliente(){
   }
 
   const html=gerarHtmlCliente();
-  if(window.AndroidBridge && typeof AndroidBridge.shareHtml==='function'){
-    AndroidBridge.shareHtml(html);
-    return;
-  }
   const blob=new Blob([html],{type:'text/html'});
   const nome='controle-valores-cliente.html';
   const file=new File([blob],nome,{type:'text/html'});
@@ -752,6 +744,17 @@ function esc(v){
     '"':'&quot;',
     "'":'&#039;'
   }[c]));
+}
+
+
+function imprimirOuSalvarPDF(){
+  try{
+    if(window.AndroidBridge && typeof AndroidBridge.printPage === 'function'){
+      AndroidBridge.printPage();
+      return;
+    }
+  }catch(e){}
+  window.print();
 }
 
 renderHome();

@@ -3,6 +3,10 @@ package com.edsonpedreiro.controle;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.Context;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
@@ -76,6 +80,29 @@ public class MainActivity extends Activity {
     }
 
     public class AndroidBridge {
+
+        @JavascriptInterface
+        public void printPage() {
+            runOnUiThread(() -> {
+                try {
+                    PrintManager printManager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
+                    if (printManager == null) {
+                        Toast.makeText(MainActivity.this, "Serviço de impressão indisponível.", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    String jobName = "Edson Pedreiro - Controle de Serviços";
+                    PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter(jobName);
+                    PrintAttributes attributes = new PrintAttributes.Builder()
+                            .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                            .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                            .build();
+                    printManager.print(jobName, adapter, attributes);
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Não foi possível abrir a impressão.", Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+
         @JavascriptInterface
         public void shareHtml(String html) {
             runOnUiThread(() -> {
