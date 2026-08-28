@@ -1,0 +1,20 @@
+EDSON PEDREIRO - APP ANDROID
+
+Este projeto transforma o HTML enviado em um aplicativo Android com WebView.
+
+COMO GERAR O APK NO ANDROID STUDIO
+1. Extraia este ZIP.
+2. Abra o Android Studio.
+3. Clique em Open e selecione a pasta EdsonPedreiro_Android.
+4. Aguarde o Gradle Sync terminar.
+5. Vá em Build > Build App Bundle(s) / APK(s) > Build APK(s).
+6. Quando aparecer "APK(s) generated successfully", clique em Locate.
+7. O APK normalmente ficará em:
+   app/build/outputs/apk/debug/app-debug.apk
+8. Envie esse APK para o Samsung Galaxy A17 e instale.
+9. Se o Android pedir, permita "Instalar apps desconhecidos" para o app usado para abrir o APK.
+
+OBSERVAÇÃO
+- O aplicativo funciona offline porque o HTML fica dentro do próprio APK.
+- O LocalStorage do HTML funciona dentro do WebView, portanto os dados salvos permanecem no aparelho.
+- A opção Restaurar usa o seletor de arquivos do Android.
